@@ -2,39 +2,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "../../lib/supabase";
-
-type UserRole = "customer" | "worker";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { supabaseBrowser as supabase } from "../../lib/supabase-browser";
 
 export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(false);
-  const [name, setName] = useState("");
-  const [role, setRole] = useState<UserRole>("customer");
+  const router = useRouter();
+
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
 
-  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
-  const [checkingSession, setCheckingSession] = useState(true);
-
-  // Check the existing session and listen for sign-in/sign-out changes.
   useEffect(() => {
     let mounted = true;
 
     async function checkSession() {
-      try {
-        const { data, error } = await supabase.auth.getUser();
+      const { data } = await supabase.auth.getUser();
 
-        if (!mounted) return;
-
-        setSignedInEmail(
-          error ? null : data.user?.email ?? null
-        );
-      } catch {
-        if (mounted) setSignedInEmail(null);
-      } finally {
-        if (mounted) setCheckingSession(false);
+      if (mounted) {
+        setCurrentEmail(data.user?.email ?? null);
       }
     }
 
@@ -43,9 +33,7 @@ export default function LoginPage() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) {
-        setSignedInEmail(session?.user?.email ?? null);
-      }
+      setCurrentEmail(session?.user?.email ?? null);
     });
 
     return () => {
@@ -54,31 +42,24 @@ export default function LoginPage() {
     };
   }, []);
 
-  async function handleSubmit(
-    event: React.FormEvent<HTMLFormElement>
-  ) {
-    event.preventDefault();
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setLoading(true);
     setMessage("");
 
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+      if (mode === "signup") {
+        if (!fullName.trim()) {
+          setMessage("Please enter your full name.");
+          return;
+        }
 
-        if (error) throw error;
-
-        setMessage("Successfully signed in!");
-      } else {
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
             data: {
-              full_name: name.trim(),
-              role,
+              full_name: fullName.trim(),
             },
           },
         });
@@ -86,20 +67,29 @@ export default function LoginPage() {
         if (error) throw error;
 
         if (data.session) {
-          setMessage(
-            `Account created as ${role}. You are signed in.`
-          );
+          setCurrentEmail(data.user?.email ?? email.trim());
+          setMessage("Account created successfully!");
         } else {
           setMessage(
-            `Sign-up submitted as ${role}. Check your email to confirm your account before signing in.`
+            "Account created. Check your email to confirm your account, then log in."
           );
         }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+
+        if (error) throw error;
+
+        setCurrentEmail(data.user.email ?? email.trim());
+        setMessage("Login successful!");
+        router.push("/");
+        router.refresh();
       }
-    } catch (error) {
+    } catch (error: unknown) {
       setMessage(
-        error instanceof Error
-          ? error.message
-          : "Something went wrong. Please try again."
+        error instanceof Error ? error.message : "Something went wrong."
       );
     } finally {
       setLoading(false);
@@ -115,9 +105,14 @@ export default function LoginPage() {
 
       if (error) throw error;
 
-      setMessage("Signed out successfully.");
+      setCurrentEmail(null);
       setPassword("");
-    } catch (error) {
+      setEmail("");
+      setFullName("");
+      setMode("login");
+      setMessage("Signed out successfully. You can log in with another account.");
+      router.refresh();
+    } catch (error: unknown) {
       setMessage(
         error instanceof Error ? error.message : "Could not sign out."
       );
@@ -126,187 +121,211 @@ export default function LoginPage() {
     }
   }
 
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "12px",
+    marginTop: "6px",
+    border: "1px solid #ccc",
+    borderRadius: "8px",
+    boxSizing: "border-box",
+    fontSize: "15px",
+  };
+
+  const buttonStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "12px",
+    background: "#2563eb",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "16px",
+    fontWeight: 600,
+    cursor: loading ? "not-allowed" : "pointer",
+    opacity: loading ? 0.7 : 1,
+  };
+
   return (
     <main
       style={{
-        maxWidth: 440,
-        margin: "50px auto",
-        padding: 24,
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "24px",
+        background: "#f3f4f6",
         fontFamily: "Arial, sans-serif",
       }}
     >
-      <h1>KaamConnect</h1>
+      <section
+        style={{
+          width: "100%",
+          maxWidth: "420px",
+          background: "white",
+          padding: "32px",
+          borderRadius: "16px",
+          boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
+          boxSizing: "border-box",
+        }}
+      >
+        <h1 style={{ textAlign: "center", marginTop: 0 }}>
+          KaamConnect
+        </h1>
 
-      {checkingSession ? (
-        <p>Checking your session...</p>
-      ) : signedInEmail ? (
-        <section
+        <p
           style={{
-            padding: 16,
-            marginBottom: 20,
-            border: "1px solid #ccc",
-            borderRadius: 8,
+            textAlign: "center",
+            color: "#666",
+            marginBottom: "24px",
           }}
         >
-          <h2>Welcome back!</h2>
-          <p><strong>Session active</strong></p>
-          <p>
-            Signed in as: <strong>{signedInEmail}</strong>
-          </p>
+          {currentEmail
+            ? "Your account"
+            : mode === "login"
+              ? "Log in to your account"
+              : "Create your account"}
+        </p>
 
-          <button
-            type="button"
-            onClick={handleSignOut}
-            disabled={loading}
-            style={{ padding: "10px 16px", cursor: "pointer" }}
-          >
-            {loading ? "Please wait..." : "Sign out"}
-          </button>
-        </section>
-      ) : (
-        <>
-          <h2>{isLogin ? "Welcome back!" : "Create your account"}</h2>
+        {currentEmail ? (
+          <div>
+            <div
+              style={{
+                padding: "16px",
+                background: "#f0fdf4",
+                borderRadius: "8px",
+                marginBottom: "20px",
+              }}
+            >
+              <p style={{ margin: "0 0 8px", fontWeight: 600 }}>
+                Session active
+              </p>
+              <p style={{ margin: 0, overflowWrap: "anywhere" }}>
+                Signed in as <strong>{currentEmail}</strong>
+              </p>
+            </div>
 
-          <p>
-            {isLogin
-              ? "Sign in to your KaamConnect account."
-              : "Join your local community."}
-          </p>
-
+            <button
+              type="button"
+              onClick={handleSignOut}
+              disabled={loading}
+              style={{
+                ...buttonStyle,
+                background: "#dc2626",
+              }}
+            >
+              {loading ? "Signing out..." : "Sign out"}
+            </button>
+          </div>
+        ) : (
           <form onSubmit={handleSubmit}>
-            {!isLogin && (
-              <>
-                <div style={{ marginBottom: 16 }}>
-                  <label htmlFor="name">Full name</label>
-                  <input
-                    id="name"
-                    type="text"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    required
-                    maxLength={100}
-                    autoComplete="name"
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      padding: 10,
-                      marginTop: 6,
-                      boxSizing: "border-box",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: 16 }}>
-                  <label htmlFor="role">I want to join as</label>
-                  <select
-                    id="role"
-                    value={role}
-                    onChange={(event) =>
-                      setRole(event.target.value as UserRole)
-                    }
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      padding: 10,
-                      marginTop: 6,
-                    }}
-                  >
-                    <option value="customer">
-                      Customer — I need services
-                    </option>
-                    <option value="worker">
-                      Worker — I provide services
-                    </option>
-                  </select>
-                </div>
-              </>
+            {mode === "signup" && (
+              <label style={{ display: "block", marginBottom: "16px" }}>
+                Full name
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Enter your full name"
+                  autoComplete="name"
+                  required
+                  style={inputStyle}
+                />
+              </label>
             )}
 
-            <div style={{ marginBottom: 16 }}>
-              <label htmlFor="email">Email address</label>
+            <label style={{ display: "block", marginBottom: "16px" }}>
+              Email address
               <input
-                id="email"
                 type="email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
                 autoComplete="email"
-                style={{
-                  display: "block",
-                  width: "100%",
-                  padding: 10,
-                  marginTop: 6,
-                  boxSizing: "border-box",
-                }}
+                required
+                style={inputStyle}
               />
-            </div>
+            </label>
 
-            <div style={{ marginBottom: 16 }}>
-              <label htmlFor="password">
-                Password (at least 8 characters)
-              </label>
+            <label style={{ display: "block", marginBottom: "20px" }}>
+              Password
               <input
-                id="password"
                 type="password"
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                autoComplete={
+                  mode === "login" ? "current-password" : "new-password"
+                }
                 minLength={8}
-                autoComplete={isLogin ? "current-password" : "new-password"}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  padding: 10,
-                  marginTop: 6,
-                  boxSizing: "border-box",
-                }}
+                required
+                style={inputStyle}
               />
-            </div>
+            </label>
 
             <button
               type="submit"
               disabled={loading}
-              style={{
-                padding: "12px 18px",
-                cursor: loading ? "wait" : "pointer",
-              }}
+              style={buttonStyle}
             >
               {loading
                 ? "Please wait..."
-                : isLogin
-                  ? "Sign in"
+                : mode === "login"
+                  ? "Log in"
                   : "Create account"}
             </button>
+
+            <p style={{ textAlign: "center", marginBottom: 0 }}>
+              {mode === "login"
+                ? "Don't have an account?"
+                : "Already have an account?"}{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode(mode === "login" ? "signup" : "login");
+                  setMessage("");
+                }}
+                style={{
+                  border: "none",
+                  background: "none",
+                  color: "#2563eb",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                {mode === "login" ? "Sign up" : "Log in"}
+              </button>
+            </p>
           </form>
+        )}
 
-          <p>
-            <button
-              type="button"
-              onClick={() => {
-                setIsLogin((current) => !current);
-                setMessage("");
-              }}
-              style={{
-                border: "none",
-                background: "transparent",
-                textDecoration: "underline",
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              {isLogin
-                ? "Need an account? Sign up"
-                : "Already have an account? Sign in"}
-            </button>
+        {message && (
+          <p
+            role="status"
+            style={{
+              marginTop: "20px",
+              padding: "12px",
+              borderRadius: "8px",
+              background: "#eff6ff",
+              color: "#1e40af",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {message}
           </p>
-        </>
-      )}
+        )}
 
-      <p role="status" aria-live="polite">{message}</p>
-
-      <p style={{ marginTop: 24 }}>
-        <a href="/">Back to homepage</a>
-      </p>
+        <div
+          style={{
+            borderTop: "1px solid #eee",
+            marginTop: "24px",
+            paddingTop: "20px",
+            textAlign: "center",
+          }}
+        >
+          <Link href="/" style={{ color: "#2563eb" }}>
+            Back to homepage
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }
